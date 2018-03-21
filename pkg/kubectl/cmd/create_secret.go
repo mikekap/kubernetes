@@ -58,7 +58,7 @@ var (
 
 	secretExample = templates.Examples(i18n.T(`
 	  # Create a new secret named my-secret with keys for each file in folder bar
-	  kubectl create secret generic my-secret --from-file=path/to/bar
+	  kubectl create secret generic my-secret --from-file=path/to/bar --file-trim-newlines
 
 	  # Create a new secret named my-secret with specified keys instead of names on disk
 	  kubectl create secret generic my-secret --from-file=ssh-privatekey=~/.ssh/id_rsa --from-file=ssh-publickey=~/.ssh/id_rsa.pub
@@ -95,6 +95,7 @@ func NewCmdCreateSecretGeneric(f cmdutil.Factory, cmdOut io.Writer) *cobra.Comma
 	cmd.Flags().String("from-env-file", "", "Specify the path to a file to read lines of key=val pairs to create a secret (i.e. a Docker .env file).")
 	cmd.Flags().String("type", "", i18n.T("The type of secret to create"))
 	cmd.Flags().Bool("append-hash", false, "Append a hash of the secret to its name.")
+	cmd.Flags().Bool("file-trim-newlines", false, "Remove newlines from values when using --from-file.")
 	return cmd
 }
 
@@ -108,12 +109,13 @@ func CreateSecretGeneric(f cmdutil.Factory, cmdOut io.Writer, cmd *cobra.Command
 	switch generatorName := cmdutil.GetFlagString(cmd, "generator"); generatorName {
 	case cmdutil.SecretV1GeneratorName:
 		generator = &kubectl.SecretGeneratorV1{
-			Name:           name,
-			Type:           cmdutil.GetFlagString(cmd, "type"),
-			FileSources:    cmdutil.GetFlagStringSlice(cmd, "from-file"),
-			LiteralSources: cmdutil.GetFlagStringArray(cmd, "from-literal"),
-			EnvFileSource:  cmdutil.GetFlagString(cmd, "from-env-file"),
-			AppendHash:     cmdutil.GetFlagBool(cmd, "append-hash"),
+			Name:             name,
+			Type:             cmdutil.GetFlagString(cmd, "type"),
+			FileSources:      cmdutil.GetFlagStringSlice(cmd, "from-file"),
+			LiteralSources:   cmdutil.GetFlagStringArray(cmd, "from-literal"),
+			EnvFileSource:    cmdutil.GetFlagString(cmd, "from-env-file"),
+			AppendHash:       cmdutil.GetFlagBool(cmd, "append-hash"),
+			FileTrimNewlines: cmdutil.GetFlagBool(cmd, "file-trim-newlines"),
 		}
 	default:
 		return errUnsupportedGenerator(cmd, generatorName)
