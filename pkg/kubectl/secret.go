@@ -17,6 +17,7 @@ limitations under the License.
 package kubectl
 
 import (
+	"bytes"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -38,6 +39,8 @@ type SecretGeneratorV1 struct {
 	Type string
 	// FileSources to derive the secret from (optional)
 	FileSources []string
+	// Whether to strip newlines when reading files in FileSources
+	FileTrimNewlines bool
 	// LiteralSources to derive the secret from (optional)
 	LiteralSources []string
 	// EnvFileSource to derive the secret from (optional)
@@ -87,6 +90,16 @@ func (s SecretGeneratorV1) Generate(genericParams map[string]interface{}) (runti
 		delete(genericParams, "from-env-file")
 	}
 
+	hashParam, found := genericParams["file-trim-newlines"]
+	if found {
+		hashBool, isBool := hashParam.(bool)
+		if !isBool {
+			return nil, fmt.Errorf("expected bool, found :%v", hashParam)
+		}
+		delegate.FileTrimNewlines = hashBool
+		delete(genericParams, "file-trim-newlines")
+	}
+
 	hashParam, found := genericParams["append-hash"]
 	if found {
 		hashBool, isBool := hashParam.(bool)
@@ -117,6 +130,7 @@ func (s SecretGeneratorV1) ParamNames() []GeneratorParam {
 		{"name", true},
 		{"type", false},
 		{"from-file", false},
+		{"file-trim-newlines", false}
 		{"from-literal", false},
 		{"from-env-file", false},
 		{"force", false},
@@ -136,7 +150,7 @@ func (s SecretGeneratorV1) StructuredGenerate() (runtime.Object, error) {
 		secret.Type = v1.SecretType(s.Type)
 	}
 	if len(s.FileSources) > 0 {
-		if err := handleFromFileSources(secret, s.FileSources); err != nil {
+		if err := handleFromFileSources(secret, s.FileSources, s.FileTrimNewlines); err != nil {
 			return nil, err
 		}
 	}
@@ -186,7 +200,7 @@ func handleFromLiteralSources(secret *v1.Secret, literalSources []string) error 
 }
 
 // handleFromFileSources adds the specified file source information into the provided secret
-func handleFromFileSources(secret *v1.Secret, fileSources []string) error {
+func handleFromFileSources(secret *v1.Secret, fileSources []string, trimNewlines bool) error {
 	for _, fileSource := range fileSources {
 		keyName, filePath, err := util.ParseFileSource(fileSource)
 		if err != nil {
@@ -213,7 +227,7 @@ func handleFromFileSources(secret *v1.Secret, fileSources []string) error {
 				itemPath := path.Join(filePath, item.Name())
 				if item.Mode().IsRegular() {
 					keyName = item.Name()
-					if err = addKeyFromFileToSecret(secret, keyName, itemPath); err != nil {
+					if err = addKeyFromFileToSecret(secret, keyName, itemPath, trimNewlines); err != nil {
 						return err
 					}
 				}
@@ -249,10 +263,13 @@ func handleFromEnvFileSource(secret *v1.Secret, envFileSource string) error {
 	})
 }
 
-func addKeyFromFileToSecret(secret *v1.Secret, keyName, filePath string) error {
+func addKeyFromFileToSecret(secret *v1.Secret, keyName, filePath string, trimNewlines bool) error {
 	data, err := ioutil.ReadFile(filePath)
 	if err != nil {
 		return err
+	}
+	if trimNewlines {
+		data = bytes.TrimSpace(data)
 	}
 	return addKeyFromLiteralToSecret(secret, keyName, data)
 }
